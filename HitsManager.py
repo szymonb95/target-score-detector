@@ -91,13 +91,8 @@ def create_scoreboard(hits, scale, ringsAmount, innerDiam):
     for hit in hits:
         hit_dist = hit[2]
         scaled_diam = innerDiam * scale[2]
-        score = 10 - int(hit_dist / scaled_diam)
-
-        # clamp score between 10 and minimum available score
-        if score < 10 - ringsAmount + 1:
-            score = 0
-        elif score > 10:
-            score = 10
+        # score = 10 - int(hit_dist / scaled_diam)
+        score = int(10 - (hit_dist - 21) / 32)
         
         hit_obj = Hit(int(hit[0]), int(hit[1]), score, hit[3])
         scoreboard.append(hit_obj)

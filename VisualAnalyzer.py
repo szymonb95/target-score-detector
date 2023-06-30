@@ -2,6 +2,7 @@ import ContourClassifier as cntr
 import Geometry2D as geo2D
 import numpy as np
 import cv2
+import imutils
 
 def subtract_background(query, subtrahend):
     '''
@@ -15,20 +16,17 @@ def subtract_background(query, subtrahend):
         {Numpy.array} The difference image.
     '''
 
-    # convert to grayscale
-    gray_query = cv2.cvtColor(query, cv2.COLOR_RGB2GRAY)
-    gray_subtrahend = cv2.cvtColor(subtrahend, cv2.COLOR_RGB2GRAY)
-
-    # apply gaussian blur
-    kernel = (3,3)
-    gray_query = cv2.GaussianBlur(gray_query, kernel, 0)
-    gray_subtrahend = cv2.GaussianBlur(gray_subtrahend, kernel, 0)
-
+    query_denoised = np.empty(query.shape, np.uint8)
+    subtrahend_denoised = np.empty(subtrahend.shape, np.uint8)
+    cv2.fastNlMeansDenoising(query, query_denoised, 7, 21, 17)
+    cv2.fastNlMeansDenoising(subtrahend, subtrahend_denoised, 7, 21, 12)
+    
     # apply a black area on the subtrahend image
-    gray_subtrahend[gray_query == 0] = 0
+    subtrahend_denoised[query_denoised == 0] = 0
 
     # calculate diff
-    diff = cv2.absdiff(gray_subtrahend, gray_query)
+    diff = cv2.absdiff(query_denoised, subtrahend_denoised)
+    _, diff = cv2.threshold(diff, 50, 255, cv2.THRESH_BINARY)
     return diff
 
 def emphasize_lines(img, distances, estimatedRadius):
@@ -59,6 +57,7 @@ def emphasize_lines(img, distances, estimatedRadius):
                                maxRadius=int(estimatedRadius * 1.05))
     
     # use largest detected circle
+    outerCircle = None
     if type(circles) != type(None):
         outerCircle = sorted(circles[0], key=lambda x: x[2])[::-1][0]
         radius = outerCircle[2]
@@ -73,6 +72,8 @@ def emphasize_lines(img, distances, estimatedRadius):
     # apply thresh and morphology
     _, img = cv2.threshold(img, 20, 0xff, cv2.THRESH_BINARY)
     img = cv2.morphologyEx(img, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
+    dbg_img = img
+    # cv2.imshow('threshold', cv2.resize(dbg_img, (1153, 648)))
 
     # find the straight segments in the image
     lines = cv2.HoughLinesP(img, 2, np.pi / 180, 120, minLineLength=20, maxLineGap=0)
@@ -82,6 +83,16 @@ def emphasize_lines(img, distances, estimatedRadius):
         for line in lines:
             for x1, y1, x2, y2 in line:
                 cv2.line(img_copy, (x1, y1), (x2, y2), (0xff,0xff,0xff), 5)
+    
+    circles_img = np.zeros(img.shape, dtype=img.dtype)
+    # if type(circles) != type(None):
+    #     for x, y, r in circles[0]:
+    #         cv2.circle(circles_img, (int(x), int(y)), int(r), (0xff, 0xff, 0xff), 4)
+    if type(outerCircle) != type(None):
+        cv2.circle(circles_img, (int(outerCircle[0]), int(outerCircle[1])), int(outerCircle[2]), (0xff, 0x00, 0x00), 4)
+    cv2.putText(circles_img, f'Circles: {len(circles[0]) if (type(circles) != type(None)) else 0}', (50, 50),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0xff,0xff,0xff), thickness=4)
+    cv2.imshow('circles', cv2.resize(circles_img, (1153, 648)))
                 
     return radius, img_copy
 
@@ -125,6 +136,37 @@ def reproduce_proj_contours(img, distances, bullseye, radius):
     # detect contours again, after the extension
     return cv2.findContours(blank_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2:][0]
 
+def detect_hit_contours(img):
+    '''
+    Detect contours of the hit
+
+    Parameters:
+        {Numpy.array} img - The image to edit
+        {list} distances - [
+                              {List} [
+                                        {Number} x coordinate of the point,
+                                        {Number} y coordinate of the point,
+                                        {Number} The distance of the point from the bull'seye point
+                                     ]
+                              ...
+                           ]
+        {Tuple} bullseye - (
+                              {Number} x coordinate of the bull'seye point,
+                              {Number} y coordinate of the bull'seye point
+                           )
+
+    Returns:
+        {List} A list of the projectiles' contours.
+    '''
+    edged = cv2.Canny(img, 25, 75)
+    edged = cv2.dilate(edged, None, iterations=1)
+    edged = cv2.erode(edged, None, iterations=1)
+    # cv2.imshow('edged',edged)
+
+    contours = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours = imutils.grab_contours(contours)
+    return contours
+
 def find_suspect_hits(contours, vertices, scale):
     '''
     Find all suspect points in the target that might be hits.
@@ -158,7 +200,7 @@ def find_suspect_hits(contours, vertices, scale):
                         )
     '''
 
-    bullseye = vertices[5]
+    bullseye = vertices[4]
     res = []
     
     for cont in contours:
@@ -179,6 +221,7 @@ def find_suspect_hits(contours, vertices, scale):
         res_y = (hit[1] - vertices[0][1]) * scale[1] + vertices[0][1]
         res_dist = geo2D.euclidean_dist(hit, bullseye)
         res_hit = (res_x,res_y,res_dist, bullseye)
-        res.append(res_hit)
+        if (res_dist < 320):
+            res.append(res_hit)
 
     return res

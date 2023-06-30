@@ -67,7 +67,7 @@ class Sketcher:
             score_string = str(hit.score) if (hit.score > 0) else 'miss'
             
             if withOutline:
-                cv2.circle(img, (x,y), 13, outline, diam + 2)
+                cv2.circle(img, (x,y), 8, outline, diam + 2)
                 
             cv2.circle(img, (x,y), 10, foreground, diam)
             

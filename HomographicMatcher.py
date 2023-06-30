@@ -58,8 +58,7 @@ def calc_homography(queryKeys, trainKeys, matches):
     src_pts = np.float32([queryKeys[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([trainKeys[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
     
-    H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5)
-    return H
+    return cv2.findHomography(src_pts, dst_pts, cv2.LMEDS, 5)
 
 def is_true_homography(vertices, edges, imgSize, stretchThreshold):
     '''
@@ -99,17 +98,17 @@ def is_true_homography(vertices, edges, imgSize, stretchThreshold):
     B = vertices[1]
     C = vertices[2]
     D = vertices[3]
-    E = vertices[4]
+    # E = vertices[4]
     upsidedown = B[0] < A[0]
 
     if upsidedown:
         c_ordered = C[0] < D[0] and C[1] < B[1]
         d_ordered = D[1] < A[1]
-        e_ordered = E[0] < D[0] and E[0] > B[0]
+        # e_ordered = E[0] < D[0] and E[0] > B[0]
     else:
         c_ordered = C[0] > D[0] and C[1] > B[1]
         d_ordered = D[1] > A[1]
-        e_ordered = E[0] > D[0] and E[0] < B[0]
+        # e_ordered = E[0] > D[0] and E[0] < B[0]
 
     ab = edges[0]
     bc = edges[1]
@@ -120,8 +119,8 @@ def is_true_homography(vertices, edges, imgSize, stretchThreshold):
     unstretched_ver = bc / da >= 1 - stretchThreshold and bc / da <= 1 + stretchThreshold
 
     unstretched = unstretched_hor and unstretched_ver
-    all_ordered = c_ordered and d_ordered and e_ordered
-    vals_arr = np.array([A[0],A[1],B[0],B[1],C[0],C[1],D[0],D[1],E[0],E[1]])
+    all_ordered = c_ordered and d_ordered
+    vals_arr = np.array([A[0],A[1],B[0],B[1],C[0],C[1],D[0],D[1]])
     out_of_bounds = (vals_arr < 0).any() or (vals_arr > max(imgSize[0], imgSize[1])).any()
 
     return unstretched and all_ordered and not out_of_bounds
