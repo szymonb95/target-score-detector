@@ -1,6 +1,16 @@
 import numpy as np
 import cv2
 
+class FastAndBriskMatcher():
+    def __init__(self):
+        self.fast = cv2.FastFeatureDetector_create()
+        self.sift = cv2.SIFT_create()
+    
+    def detectAndCompute(self, img, something):
+        keypoints = self.fast.detect(img, None)
+        return self.sift.compute(img, keypoints)
+
+
 def ratio_match(matcher, queryDesc, train, ratio):
     '''
     Find feature matches between two images.
@@ -20,7 +30,8 @@ def ratio_match(matcher, queryDesc, train, ratio):
                            )
                 )
     '''
-
+    cv2.fastNlMeansDenoising(train, train, 5.0, 7, 5)
+    # _, train = cv2.threshold(train, 250, 255, 0)
     train_keys, train_desc = matcher.detectAndCompute(train, None)
     bf = cv2.BFMatcher(crossCheck=False)
     best_match = []
@@ -35,6 +46,9 @@ def ratio_match(matcher, queryDesc, train, ratio):
                     best_match.append(m1)
         except ValueError:
             return [], ([], [])
+
+    keypointimage = cv2.drawKeypoints(train, train_keys, None, color=(0, 255, 0), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    cv2.imshow('keypoints', keypointimage)
 
     return best_match, (train_keys, train_desc)
 

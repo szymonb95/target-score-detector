@@ -26,7 +26,7 @@ def subtract_background(query, subtrahend):
 
     # calculate diff
     diff = cv2.absdiff(query_denoised, subtrahend_denoised)
-    _, diff = cv2.threshold(diff, 50, 255, cv2.THRESH_BINARY)
+    _, diff = cv2.threshold(diff, 120, 255, cv2.THRESH_BINARY)
     return diff
 
 def emphasize_lines(img, distances, estimatedRadius):
