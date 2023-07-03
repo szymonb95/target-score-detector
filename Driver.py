@@ -5,9 +5,9 @@ import cv2
 # input
 # model = cv2.imread('res/input/target.jpg')
 # video_name = 'res/input/video.mp4'
-model = cv2.imread('res/input/target_hq.jpg')
-model = cv2.resize(model, (300, 300))
-video_name = 'res/input/02.mp4'
+model = cv2.imread('res/input/target2.jpg')
+# model = cv2.resize(model, (300, 300))
+video_name = 'res/input/20230625_210119.mp4'
 bullseye_point = (355, 370)
 inner_diameter_px = 30
 inner_diameter_cm = 1.5
@@ -15,11 +15,11 @@ rings_amount = 10
 display_in_cm = True
 
 # get a sample frame from the video
-# cap = cv2.VideoCapture(video_name)
+cap = cv2.VideoCapture(video_name)
 # camera capture
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+# cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 _, test_sample = cap.read()
 
 # calculate the sizes of the frame and the input
