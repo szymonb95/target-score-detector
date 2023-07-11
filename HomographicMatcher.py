@@ -48,6 +48,8 @@ def ratio_match(matcher, queryDesc, train, ratio):
             return [], ([], [])
 
     keypointimage = cv2.drawKeypoints(train, train_keys, None, color=(0, 255, 0), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    kp_h, kp_w, _ = keypointimage.shape
+    keypointimage = cv2.resize(keypointimage, (int(kp_w*0.4), int(kp_h*0.4)))
     cv2.imshow('keypoints', keypointimage)
 
     return best_match, (train_keys, train_desc)
