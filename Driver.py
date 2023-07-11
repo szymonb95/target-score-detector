@@ -6,8 +6,8 @@ import cv2
 # model = cv2.imread('res/input/target.jpg')
 # video_name = 'res/input/video.mp4'
 model = cv2.imread('res/input/target3.jpg')
-# model = cv2.resize(model, (300, 300))
-video_name = 'res/input/20230625_210119.mp4'
+video_name = 'res/input/02.mp4'
+model = cv2.resize(model, (700, 700))
 bullseye_point = (355, 370)
 inner_diameter_px = 30
 inner_diameter_cm = 1.5

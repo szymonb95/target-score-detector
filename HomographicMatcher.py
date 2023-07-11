@@ -30,15 +30,21 @@ def ratio_match(matcher, queryDesc, train, ratio):
                            )
                 )
     '''
-    cv2.fastNlMeansDenoising(train, train, 5.0, 7, 5)
+    train = cv2.fastNlMeansDenoising(train, train, 5.0, 7, 5)
+    train = cv2.GaussianBlur(train, (5, 5), 0)
     # _, train = cv2.threshold(train, 250, 255, 0)
     train_keys, train_desc = matcher.detectAndCompute(train, None)
-    bf = cv2.BFMatcher(crossCheck=False)
+
+    FLANN_INDEX_KDTREE = 1
+    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+    search_params = dict(checks = 50)
+    flann = cv2.FlannBasedMatcher(index_params, search_params)
+    
     best_match = []
     
     if type(train_desc) != type(None):
         # apply ratio test
-        matches = bf.knnMatch(queryDesc, train_desc, k=2)
+        matches = flann.knnMatch(queryDesc, train_desc, k=2)
 
         try:
             for m1, m2 in matches:
@@ -47,7 +53,7 @@ def ratio_match(matcher, queryDesc, train, ratio):
         except ValueError:
             return [], ([], [])
 
-    keypointimage = cv2.drawKeypoints(train, train_keys, None, color=(0, 255, 0), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    keypointimage = cv2.drawKeypoints(train, train_keys, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
     kp_h, kp_w, _ = keypointimage.shape
     keypointimage = cv2.resize(keypointimage, (int(kp_w*0.4), int(kp_h*0.4)))
     cv2.imshow('keypoints', keypointimage)
@@ -74,7 +80,7 @@ def calc_homography(queryKeys, trainKeys, matches):
     src_pts = np.float32([queryKeys[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([trainKeys[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
     
-    return cv2.findHomography(src_pts, dst_pts, cv2.LMEDS, 5)
+    return cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5)
 
 def is_true_homography(vertices, edges, imgSize, stretchThreshold):
     '''

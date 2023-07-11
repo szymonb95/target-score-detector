@@ -28,24 +28,33 @@ class VideoAnalyzer:
         frameSize = test_sample.shape
         self.rings_amount = ringsAmount
         self.inner_diam = diamPx
-        self.model = model
         self.frame_h, self.frame_w, _ = frameSize
-        # self.matcher = cv2.SIFT_create(nfeatures=80, contrastThreshold=0.01, sigma=1.4)
-        self.matcher = cv2.SIFT_create()
+        self.matcher = cv2.SIFT_create(nfeatures=0, nOctaveLayers=3, contrastThreshold=0.02, edgeThreshold=10, sigma=0.6)
 
         # calculate anchor points and model features
-        self.anchor_points, self.pad_model = geo2D.zero_pad_as(self.model, frameSize)
+        self.anchor_points, self.pad_model = geo2D.zero_pad_as(model, frameSize)
         self.bullseye_point = bullseye
         anchor_a = self.anchor_points[0]
         bullseye_anchor = (anchor_a[0] + bullseye[0],anchor_a[1] + bullseye[1])
         self.anchor_points.append(bullseye_anchor)
         self.anchor_points = np.float32(self.anchor_points).reshape(-1, 1, 2)
+        self.model_changed = False
+        self.select_model(model)
 
-        self.model_gray = cv2.cvtColor(model, cv2.COLOR_RGB2GRAY)
-        cv2.fastNlMeansDenoising(self.model_gray, self.model_gray, 5.0, 7, 5)
+
+    def select_model(self, image):
+        self.model = image
+        self.model_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        if not self.model_changed:
+            self.model_gray = cv2.GaussianBlur(self.model_gray, (15, 15), 0)
         self.model_keys, self.model_desc = self.matcher.detectAndCompute(self.model_gray, None)
-        eypointimage = cv2.drawKeypoints(self.model_gray, self.model_keys, None, color=(0, 255, 0), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        eypointimage = cv2.drawKeypoints(self.model_gray, self.model_keys, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv2.imshow('model_keypoints', eypointimage)
+    
+    def switch_model(self, image):
+        self.model_changed = True
+        self.select_model(image)
+
 
     def _analyze_frame(self, frame):
         '''
@@ -76,12 +85,14 @@ class VideoAnalyzer:
         scores = []
         warped_frame = None
         
+        frame_no = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         frame_shape = frame_gray.shape
         # frame_gray = cv2.resize(frame_gray, (int(frame_shape[1] * 0.8), int(frame_shape[0] * 0.8)) )
 
         # find a match between the model image and the frame
-        matches, (frame_keys, frame_desc) = matcher.ratio_match(self.matcher, self.model_desc, frame_gray, .6)
+        matches, (frame_keys, frame_desc) = matcher.ratio_match(self.matcher, self.model_desc, frame_gray, .75)
 
         # start calculating homography
         if len(matches) >= 4:
@@ -112,6 +123,8 @@ class VideoAnalyzer:
                     # warp the input image over the filmed object and calculate the scale difference
                     warped_frame_gray = cv2.warpPerspective(frame_gray, homography, (w, h), flags=cv2.WARP_INVERSE_MAP)
                     warped_frame = cv2.warpPerspective(frame, homography, (w, h), flags=cv2.WARP_INVERSE_MAP)
+                    if not self.model_changed and frame_no > 25:
+                        self.switch_model(warped_frame)
                     # cv2.imshow('warped_img', warped_frame)
                     scale = geo2D.calc_model_scale(warped_edges, self.model.shape)
                     
