@@ -6,6 +6,29 @@ import Geometry2D as geo2D
 import numpy as np
 import cv2
 
+
+class BestHomography:
+    def __init__(self) -> None:
+        self.matches: list = []
+        self.keypoints: tuple = ()
+        self.homography = None
+        self.mask = None
+        self.warped_vertices = None
+        self.warped_edges = None
+    
+    def set_matches_and_kps(self, matches, keypoints):
+        self.matches = matches
+        self.keypoints = keypoints
+    
+    def set_homography_and_mask(self, homography, mask):
+        self.homography = homography
+        self.mask = mask
+    
+    def set_warped_edges_and_vertices(self, edges, vertices):
+        self.warped_edges = edges
+        self.warped_vertices = vertices
+
+
 class VideoAnalyzer:
     def __init__(self, videoPath, model, bullseye, ringsAmount, diamPx):
         '''
@@ -40,6 +63,7 @@ class VideoAnalyzer:
         self.anchor_points = np.float32(self.anchor_points).reshape(-1, 1, 2)
         self.model_changed = False
         self.select_model(model)
+        self.best_homography = BestHomography()
 
 
     def select_model(self, image):
@@ -93,66 +117,70 @@ class VideoAnalyzer:
 
         # find a match between the model image and the frame
         matches, (frame_keys, frame_desc) = matcher.ratio_match(self.matcher, self.model_desc, frame_gray, .75)
+        h,w = self.model_gray.shape
 
-        # start calculating homography
-        if len(matches) >= 4:
+        if not self.best_homography.matches or len(matches) < len(self.best_homography.matches):
+            if len(matches) < 4:
+                return
             homography, mask = matcher.calc_homography(self.model_keys, frame_keys, matches)
 
             # check if homography succeeded and start warping the model over the detected object
             if type(homography) != type(None):
                 matchesMask = mask.ravel().tolist()
-                h,w = self.model_gray.shape
                 pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
                 warped_transform = cv2.perspectiveTransform(pts, homography)
                 img2 = cv2.polylines(np.copy(frame_gray), [np.int32(warped_transform)], True, 255, 3, cv2.LINE_AA)
                 warped_transform = np.append(warped_transform, np.array(self.bullseye_point).reshape(1,1,2), axis=0)
-                draw_params = dict(matchColor = (0,255,0), # draw matches in green color
-                    singlePointColor = None,
-                    matchesMask = matchesMask, # draw only inliers
-                    flags = 2
-                )
-                img3 = cv2.drawMatches(self.model_gray, self.model_keys, img2, frame_keys, matches, None, **draw_params)
-                img3_h, img3_w,_ = img3.shape
-                img3 = cv2.resize(img3, (int(img3_w*0.3), int(img3_h*0.3)))
-                cv2.imshow('matches', img3)
-
+                # draw_params = dict(matchColor = (0,255,0), # draw matches in green color
+                #     singlePointColor = None,
+                #     matchesMask = matchesMask, # draw only inliers
+                #     flags = 2
+                # )
+                # img3 = cv2.drawMatches(self.model_gray, self.model_keys, img2, frame_keys, matches, None, **draw_params)
+                # img3_h, img3_w,_ = img3.shape
+                # img3 = cv2.resize(img3, (int(img3_w*0.3), int(img3_h*0.3)))
+                # cv2.imshow('matches', img3)
                 warped_vertices, warped_edges = geo2D.calc_vertices_and_edges(warped_transform)
 
                 # check if homography is good enough to continue
                 if matcher.is_true_homography(warped_vertices, warped_edges, (self.frame_w, self.frame_h), .2):
-                    # warp the input image over the filmed object and calculate the scale difference
-                    warped_frame_gray = cv2.warpPerspective(frame_gray, homography, (w, h), flags=cv2.WARP_INVERSE_MAP)
-                    warped_frame = cv2.warpPerspective(frame, homography, (w, h), flags=cv2.WARP_INVERSE_MAP)
-                    if not self.model_changed and frame_no > 25:
-                        self.switch_model(warped_frame)
-                    # cv2.imshow('warped_img', warped_frame)
-                    scale = geo2D.calc_model_scale(warped_edges, self.model.shape)
-                    
-                    # process image
-                    sub_target = visuals.subtract_background(self.model_gray, cv2.resize(warped_frame_gray, (self.model.shape[1], self.model.shape[0])))
-                    pixel_distances = geo2D.calc_distances_from(self.model.shape, self.bullseye_point)
-                    estimated_warped_radius = self.rings_amount * self.inner_diam * scale[2]
-                    cv2.imshow('sub_target', sub_target)
-                    
-                    proj_contours = visuals.detect_hit_contours(sub_target)
-                    
-                    suspect_hits = visuals.find_suspect_hits(proj_contours, warped_vertices, scale)
+                    self.best_homography.set_matches_and_kps(matches, frame_keys)
+                    self.best_homography.set_homography_and_mask(homography, mask)
+                    self.best_homography.set_warped_edges_and_vertices(warped_vertices, warped_edges)
 
-                    # calculate hits and draw circles around them
-                    scoreboard = hitsMngr.create_scoreboard(suspect_hits, scale, self.rings_amount, self.inner_diam)
+        # warp the input image over the filmed object and calculate the scale difference
+        warped_frame_gray = cv2.warpPerspective(frame_gray, self.best_homography.homography, (w, h), flags=cv2.WARP_INVERSE_MAP)
+        warped_frame = cv2.warpPerspective(frame, self.best_homography.homography, (w, h), flags=cv2.WARP_INVERSE_MAP)
+        if not self.model_changed and frame_no > 5:
+            self.switch_model(warped_frame)
+        # cv2.imshow('warped_img', warped_frame)
+        scale = geo2D.calc_model_scale(self.best_homography.warped_edges, self.model.shape)
+        
+        # process image
+        sub_target = visuals.subtract_background(self.model_gray, cv2.resize(warped_frame_gray, (self.model.shape[1], self.model.shape[0])))
+        pixel_distances = geo2D.calc_distances_from(self.model.shape, self.bullseye_point)
+        estimated_warped_radius = self.rings_amount * self.inner_diam * scale[2]
+        cv2.imshow('sub_target', sub_target)
+        
+        proj_contours = visuals.detect_hit_contours(sub_target)
+        
+        suspect_hits = visuals.find_suspect_hits(proj_contours, self.best_homography.warped_vertices, scale)
 
-                    # insert warped frame in original
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*0, (0x0, 0x0, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*1, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*2, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*3, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*4, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*5, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*6, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*7, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*8, (0xff, 0xff, 0xff), 4)
-                    # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*9, (0xff, 0xff, 0xff), 4)
-                    frame[:h,:w] = warped_frame
+        # calculate hits and draw circles around them
+        scoreboard = hitsMngr.create_scoreboard(suspect_hits, scale, self.rings_amount, self.inner_diam)
+
+        # insert warped frame in original
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*0, (0x0, 0x0, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*1, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*2, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*3, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*4, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*5, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*6, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*7, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*8, (0xff, 0xff, 0xff), 4)
+        # cv2.circle(self.model, (int(self.bullseye_point[0]), int(self.bullseye_point[1])), 21+32*9, (0xff, 0xff, 0xff), 4)
+        frame[:h,:w] = warped_frame
 
         return self.bullseye_point, scoreboard
 
